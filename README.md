@@ -3,6 +3,8 @@
 Terminal radio player: station list, recents with shortcuts, "now playing" metadata and a
 7-band VU meter. Colors come from OpenCode themes.
 
+<img width="981" height="437" alt="image" src="https://github.com/user-attachments/assets/2d6b1745-2cbd-41c4-93df-2118febbf3d1" />
+
 ---
 
 ## English
