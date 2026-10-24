@@ -1,0 +1,74 @@
+[
+  {
+    "name": "SmoothJazz",
+    "url": "https://smoothjazz.cdnstream1.com/2585_320.mp3",
+    "genre": "Smooth Jazz",
+    "city": "USA"
+  },
+  {
+    "name": "MUGEN Radio",
+    "url": "https://mugenradio.com/hls/live.m3u8",
+    "genre": "Lofi",
+    "city": ""
+  },
+  {
+    "name": "Hunter.FM Lo-Fi",
+    "url": "https://hls.hunter.fm/lofi/192.m3u8",
+    "genre": "Lofi",
+    "city": "BR"
+  },
+  {
+    "name": "LofiRadio24",
+    "url": "https://stream.zeno.fm/0r0xa792kwzuv",
+    "genre": "Lofi",
+    "city": ""
+  },
+  {
+    "name": "laut.fm - lofi",
+    "url": "http://stream.laut.fm/lofi",
+    "genre": "Lofi",
+    "city": "DE"
+  },
+  {
+    "name": "Delta 90.3",
+    "url": "https://cdn.instream.audio/:9069/stream",
+    "genre": "FM",
+    "city": "Buenos Aires"
+  },
+  {
+    "name": "Radio con Vos 89.9",
+    "url": "https://server1.stweb.tv/rcvos/live/playlist.m3u8",
+    "genre": "FM",
+    "city": "Buenos Aires"
+  },
+  {
+    "name": "Rock & Pop 95.9",
+    "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/ROCKANDPOP.mp3",
+    "genre": "Rock",
+    "city": "Buenos Aires"
+  },
+  {
+    "name": "Metro 95.1",
+    "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/METRO_FM.mp3",
+    "genre": "Pop",
+    "city": "Buenos Aires"
+  },
+  {
+    "name": "Pop Radio 101.5",
+    "url": "https://popradio.stweb.tv/popradio/live/playlist.m3u8",
+    "genre": "Pop",
+    "city": "Buenos Aires"
+  },
+  {
+    "name": "Aspen 102.3",
+    "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/ASPEN.mp3",
+    "genre": "Clásicos",
+    "city": "Buenos Aires"
+  },
+  {
+    "name": "Blue 100.7",
+    "url": "http://playerservices.streamtheworld.com/api/livestream-redirect/BLUE_FM_100_7.mp3",
+    "genre": "Rock",
+    "city": "Buenos Aires"
+  }
+]

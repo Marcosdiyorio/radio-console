@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "radio-agent"
+version = "0.3.0"
+description = "TUI de radios por consola con temas de OpenCode"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["rich>=13"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+radio-agent = "radio.app:main"
+
+[tool.setuptools.packages.find]
+include = ["radio*"]
+
+[tool.setuptools.package-data]
+radio = ["themes/*.json", "stations.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
