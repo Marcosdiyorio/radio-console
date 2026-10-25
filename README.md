@@ -8,6 +8,7 @@ is on air, a 7-band meter and a theme that matches your terminal.
 > Una radio de consola liviana para trabajar o estudiar con música de fondo.
 > Un solo comando, pocos recursos (unas decenas de MB de RAM y alrededor de un quinto de un núcleo), sin navegador: queda tranquila de fondo y te muestra
 > qué suena, un VU de 7 bandas y un tema que combina con tu terminal.
+<img width="858" height="439" alt="image" src="https://github.com/user-attachments/assets/62b4e266-c34c-4afd-ad69-9b91e2b15653" />
 
 ---
 
