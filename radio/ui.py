@@ -265,11 +265,11 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
         genre = metadata.get("genre", "")
         if genre:
             details.append(genre)
-        muted = bool(getattr(player, "muted", False))
+        is_muted = bool(getattr(player, "muted", False))
         dot = "●" if int(time.time() * 2) % 2 == 0 else "○"
-        word = "MUTED" if muted else "PLAYING"
+        word = "MUTED" if is_muted else "PLAYING"
         status = f"STATUS: {dot} {word} · " + " · ".join(d for d in details if d)
-        status_style = f"bold {pal['yellow']}" if muted else f"bold {pal['green']}"
+        status_style = f"bold {pal['yellow']}" if is_muted else f"bold {pal['green']}"
         now.append(_clip(status, max_status - len(volume_tag)) + volume_tag, style=status_style)
     else:
         now.append("Detenido", style=muted)

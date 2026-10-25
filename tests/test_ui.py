@@ -91,6 +91,16 @@ class UiTests(unittest.TestCase):
         self.assertGreater(len(styles), 3)
         self.assertTrue(styles <= set(_gray_gradient(state.pal)))
 
+    def test_help_renders_while_playing_and_muted(self):
+        state = make_state(["Metro 95.1"])
+        state.player.playing = True
+        state.player.current_name = "Metro 95.1"
+        state.player.muted = True
+        state.show_help = True
+        output = self.render_text(state, 100, 34)
+        self.assertIn("Ayuda rápida", output)
+        self.assertIn("MUTED", output)
+
     def test_muted_state_is_visible(self):
         state = make_state(["Metro 95.1"])
         state.player.playing = True
