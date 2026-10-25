@@ -35,8 +35,20 @@ class AppStateTests(unittest.TestCase):
         self.assertEqual(self.state.n_recents, 2)
         self.assertEqual(self.state.stations[0][0], "Metro 95.1")
         self.assertEqual(self.state.stations[1][0], "Rock & Pop 95.9")
-        names = [station[0] for station in self.state.stations]
-        self.assertEqual(len(names), len(set(names)))
+        catalog = [station[0] for station in self.state.stations[self.state.n_recents:]]
+        self.assertEqual(catalog, [station[0] for station in self.state.all_stations])
+
+    def test_catalog_numbers_do_not_change_with_recents(self):
+        catalog = [station[0] for station in self.state.all_stations]
+        self.state.recents = ["Metro 95.1"]
+        self.state.rebuild()
+        self.assertTrue(self.state.play_key("1"))
+        self.assertEqual(self.state.player.play.call_args.args[0], catalog[0])
+        self.state.player.play.reset_mock()
+        self.state.recents = ["Metro 95.1", catalog[0]]
+        self.state.rebuild()
+        self.assertTrue(self.state.play_key("3"))
+        self.assertEqual(self.state.player.play.call_args.args[0], catalog[2])
 
     def test_letter_key_plays_recent(self):
         self.state.recents = ["Metro 95.1"]

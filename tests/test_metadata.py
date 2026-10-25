@@ -1,6 +1,6 @@
 import unittest
 
-from radio.metadata import _parse_title
+from radio.metadata import _parse_id3, _parse_title
 
 
 class ParseTitleTests(unittest.TestCase):
@@ -33,6 +33,22 @@ class ParseTitleTests(unittest.TestCase):
     def test_last_non_empty_title_wins(self):
         _, track, _, _ = _parse_title("StreamTitle='';StreamTitle='A - B';")
         self.assertEqual(track, "B")
+
+
+def _id3_frame(frame_id: str, text: str) -> bytes:
+    body = b"\x03" + text.encode("utf-8")
+    return frame_id.encode("ascii") + len(body).to_bytes(4, "big") + b"\x00\x00" + body
+
+
+class ParseId3Tests(unittest.TestCase):
+    def test_reads_artist_and_title(self):
+        frames = _id3_frame("TPE1", "Elior") + _id3_frame("TIT2", "Savour")
+        header = b"ID3\x03\x00\x00" + bytes([0, 0, 0, len(frames)])
+        tags = _parse_id3(header + frames + b"\xff\xfb")
+        self.assertEqual(tags, {"TPE1": "Elior", "TIT2": "Savour"})
+
+    def test_without_tag_returns_empty(self):
+        self.assertEqual(_parse_id3(b"\xff\xfb\x90\x00"), {})
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ import time
 from rich.console import Console
 from rich.live import Live
 
-from .config import MAX_RECENT, RENDER_FPS, STATIONS, add_recent, load_recents, ordered_stations
+from .config import MAX_RECENT, RENDER_FPS, STATIONS, add_recent, load_recents
 from .deps import check_deps
 from .input import read_key_nonblocking
 from .metadata import IcyMetadataFetcher
@@ -57,23 +57,36 @@ class AppState:
             self.metadata = {}
 
     # --- lista visible ------------------------------------------------
+    def _selection_key(self):
+        """Identifica la fila seleccionada: ('recent', nombre) o ('catalog', índice)."""
+        if not (0 <= self.selected < len(self.stations)):
+            return None
+        if self.selected < self.n_recents:
+            return ("recent", self.stations[self.selected][0])
+        return ("catalog", self.selected - self.n_recents)
+
     def rebuild(self, keep_name: str | None = None) -> None:
-        """Reordena recientes primero y conserva la selección por nombre."""
-        current = keep_name
-        if current is None and self.stations and 0 <= self.selected < len(self.stations):
-            current = self.stations[self.selected][0]
-        valid = {st[0] for st in self.all_stations}
+        """Recientes arriba (a-e); el catálogo siempre en orden del JSON (1..N)."""
+        key = self._selection_key()
+        by_name = {st[0]: st for st in self.all_stations}
         deduped: list[str] = []
         for name in self.recents:
-            if name in valid and name not in deduped:
+            if name in by_name and name not in deduped:
                 deduped.append(name)
         self.recents = deduped[:MAX_RECENT]
-        self.stations = ordered_stations(self.all_stations, self.recents)
         self.n_recents = len(self.recents)
-        if current is not None:
-            self.selected = next(
-                (i for i, st in enumerate(self.stations) if st[0] == current), 0
-            )
+        self.stations = [by_name[name] for name in self.recents] + list(self.all_stations)
+        index = None
+        if keep_name is not None:
+            index = next((i for i, st in enumerate(self.stations) if st[0] == keep_name), None)
+        elif key is not None:
+            kind, value = key
+            if kind == "recent" and value in self.recents:
+                index = self.recents.index(value)
+            elif kind == "catalog" and 0 <= value < len(self.all_stations):
+                index = self.n_recents + value
+        if index is not None:
+            self.selected = index
         if self.stations:
             self.selected = max(0, min(self.selected, len(self.stations) - 1))
         else:
@@ -93,7 +106,7 @@ class AppState:
         self.selected = index
         self.player.play(name, url)
         add_recent(self.recents, name)
-        self.rebuild(keep_name=name)
+        self.rebuild()
         self.fetcher.start(url, name)
 
     def stop(self) -> None:

@@ -50,9 +50,14 @@ radio-agent
 
 Mute does not cut the stream: it keeps reading and sends silence to the sink, so the
 VU drops to zero and you resume at the same point when unmuting. Mute state persists
-across stations. Recents are shown first with letters (`a`–`e`); the rest of the
-catalog is numbered from `1`. Playing a station makes it the most recent and reorders
-the list without losing the selection.
+across stations. Recents are shown first with letters (`a`–`e`); below them the full
+catalog keeps its `stations.json` order with fixed numbers `1`…`N`, so a number always
+plays the same station. Playing a station makes it the most recent (the recents block
+reorders) without moving the selection.
+
+Metadata ("now playing") comes from ICY/SHOUTcast for direct streams and from ID3 tags
+inside the segments for HLS (`.m3u8`) streams. If the metadata is missing or the
+connection drops, it retries automatically while the station plays.
 
 ### CLI
 ```bash
@@ -95,7 +100,7 @@ radio/
   stations.json  editable radio catalog
   deps.py        ffmpeg and audio sink detection
   input.py       non-blocking keyboard input
-  metadata.py    ICY/SHOUTcast metadata
+  metadata.py    ICY/SHOUTcast y ID3 (HLS) metadata, con reintentos
   player.py      ffmpeg -> PCM -> sink + levels/VU
   theme.py       OpenCode theme loader and resolver
   ui.py          rich TUI rendering
@@ -156,9 +161,14 @@ radio-agent
 
 El mute no corta el stream: sigue sonando internamente en silencio y el VU baja a
 cero, así al desmutear seguís en el mismo punto. El estado de mute se mantiene al
-cambiar de estación. Los recientes se muestran primero con letras (`a`–`e`); el
-resto del catálogo sigue numerado desde `1`. Al reproducir una estación pasa a
-ser el reciente más reciente y la lista se reordena sin perder la selección.
+cambiar de estación. Los recientes se muestran primero con letras (`a`–`e`); debajo
+queda el catálogo completo en el orden de `stations.json` con números fijos `1`…`N`,
+así un número siempre reproduce la misma estación. Al reproducir una estación pasa a
+ser el reciente más reciente (el bloque de recientes se reordena) sin mover la selección.
+
+La metadata ("now playing") sale de ICY/SHOUTcast en streams directos y de tags ID3
+dentro de los segmentos en streams HLS (`.m3u8`). Si falta o se corta la conexión,
+reintenta automáticamente mientras la estación suena.
 
 ### CLI
 ```bash
@@ -203,7 +213,7 @@ radio/
   stations.json  catálogo editable de radios
   deps.py        detección de ffmpeg y sink de audio
   input.py       lectura no bloqueante del teclado
-  metadata.py    metadata ICY/SHOUTcast
+  metadata.py    metadata ICY/SHOUTcast y ID3 (HLS), con reintentos
   player.py      pipeline ffmpeg → PCM → sink + niveles/VU
   theme.py       carga y resolución de temas OpenCode
   ui.py          render de la TUI con rich
