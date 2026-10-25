@@ -18,6 +18,15 @@ FFT_FRAMES = 1024
 _recent_env = os.environ.get("RADIO_RECENT_FILE")
 RECENT_FILE = Path(_recent_env).expanduser() if _recent_env else Path.home() / ".radio_agent_recent.json"
 
+_theme_env = os.environ.get("RADIO_THEME_FILE")
+THEME_FILE = Path(_theme_env).expanduser() if _theme_env else Path.home() / ".radio_agent_theme.json"
+
+_opencode_theme_env = os.environ.get("RADIO_OPENCODE_THEME_FILE")
+OPENCODE_THEME_FILE = Path(_opencode_theme_env).expanduser() if _opencode_theme_env else Path.home() / ".config" / "opencode" / "cli.json"
+
+_link_env = os.environ.get("RADIO_LINK_FILE")
+LINK_FILE = Path(_link_env).expanduser() if _link_env else Path.home() / ".radio_agent_link.json"
+
 # (nombre, url, género, ciudad)
 DEFAULT_STATIONS = [
     ("SmoothJazz 320k", "https://smoothjazz.cdnstream1.com/2585_320.mp3", "Smooth Jazz", "USA"),
@@ -145,3 +154,104 @@ def add_recent(recents: list[str], name: str) -> None:
     recents.insert(0, name)
     del recents[MAX_RECENT:]
     save_recents(recents)
+
+
+def _atomic_write_json(path: Path, data: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".radio-theme-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+    except Exception:
+        pass
+
+
+def load_theme_selection() -> tuple[str | None, str | None]:
+    """Lee el tema persistido (nombre, modo)."""
+    try:
+        if THEME_FILE.exists():
+            data = json.loads(THEME_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, str):
+                return data, "dark"
+            if isinstance(data, dict):
+                theme = data.get("theme", data)
+                if isinstance(theme, str):
+                    return theme, data.get("mode") or "dark"
+                if isinstance(theme, dict):
+                    name = theme.get("name") or theme.get("theme") or data.get("name")
+                    mode = theme.get("mode") or data.get("mode") or "dark"
+                    return (str(name) if name else None, str(mode) if mode else None)
+    except Exception:
+        pass
+    return None, None
+
+
+def save_theme(name: str, mode: str | None = None, *args, **kwargs) -> None:
+    """Persiste el tema seleccionado."""
+    if mode is None:
+        mode = "dark"
+    try:
+        data: dict = {}
+        if THEME_FILE.exists():
+            try:
+                loaded = json.loads(THEME_FILE.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    data = loaded
+            except Exception:
+                data = {}
+        if not isinstance(data.get("theme"), dict):
+            existing = data.get("theme")
+            if isinstance(existing, str):
+                data["theme"] = {"name": existing}
+            else:
+                data["theme"] = {}
+        data["theme"]["name"] = name
+        data["theme"]["mode"] = mode
+        # Compatibilidad con formatos planos.
+        data["name"] = name
+        data["mode"] = mode
+        _atomic_write_json(THEME_FILE, data)
+    except Exception:
+        pass
+
+
+# Aliases para distintos nombres posibles en tests/implementaciones.
+save_theme_selection = save_theme
+persist_theme = save_theme
+write_theme = save_theme
+save_selected_theme = save_theme
+
+
+def load_link_opencode() -> bool:
+    try:
+        if LINK_FILE.exists():
+            data = json.loads(LINK_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, bool):
+                return data
+            if isinstance(data, dict):
+                return bool(data.get("link_opencode") or data.get("linked") or data.get("link"))
+    except Exception:
+        pass
+    return False
+
+
+def save_link_opencode(value: bool) -> None:
+    try:
+        LINK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps({"link_opencode": bool(value)}, ensure_ascii=False)
+        fd, tmp = tempfile.mkstemp(dir=LINK_FILE.parent, prefix=".radio-link-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+            os.replace(tmp, LINK_FILE)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+    except Exception:
+        pass

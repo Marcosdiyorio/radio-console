@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+import sys
 import os
+from . import config as _config
 from pathlib import Path
 from typing import Any
 
 DEFAULT_THEME_NAME = "matrix"
+
+THEME_FILE = _config.THEME_FILE
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -130,11 +134,27 @@ def available_themes(project_dir: Path | None = None) -> list[str]:
     return sorted(names, key=str.lower)
 
 
-def _read_cli_theme() -> tuple[str, str]:
+def _read_radio_theme() -> tuple[str, str]:
     name = DEFAULT_THEME_NAME
     mode = "dark"
     try:
-        path = Path.home() / ".config" / "opencode" / "cli.json"
+        n, m = _config.load_theme_selection()
+        if n:
+            name = n
+        if m:
+            mode = m
+    except Exception:
+        pass
+    name = os.environ.get("RADIO_THEME", name)
+    mode = os.environ.get("RADIO_THEME_MODE", mode)
+    return name, mode
+
+
+def _read_opencode_theme() -> tuple[str, str]:
+    name = DEFAULT_THEME_NAME
+    mode = "dark"
+    try:
+        path = _config.OPENCODE_THEME_FILE
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))
             theme = data.get("theme", {})
@@ -150,13 +170,20 @@ def _read_cli_theme() -> tuple[str, str]:
     return name, mode
 
 
+def _read_cli_theme(link_opencode: bool = False) -> tuple[str, str]:
+    if link_opencode:
+        return _read_opencode_theme()
+    return _read_radio_theme()
+
+
 def load_theme(
     name: str | None = None,
     mode: str | None = None,
     project_dir: Path | None = None,
+    link_opencode: bool = False,
 ) -> dict:
     if name is None or mode is None:
-        cli_name, cli_mode = _read_cli_theme()
+        cli_name, cli_mode = _read_cli_theme(link_opencode)
         name = name or cli_name
         mode = mode or cli_mode
 
@@ -274,3 +301,51 @@ def palette(theme: dict) -> dict:
         "blue": color(theme, "hue", "blue", "300", default="#58a6ff"),
         "purple": color(theme, "hue", "purple", "300", default="#a371f7"),
     }
+
+
+def _atomic_write_json_path(path, data):
+    import tempfile
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = __import__("json").dumps(data, ensure_ascii=False, indent=2)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".radio-theme-")
+        try:
+            with open(fd, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+    except Exception:
+        pass
+
+
+def save_theme(name: str, mode: str | None = None, link_opencode: bool = False, *args, **kwargs) -> None:
+    if mode is None:
+        mode = "dark"
+    data = {"theme": {"name": name, "mode": mode}, "name": name, "mode": mode}
+    try:
+        if link_opencode:
+            path = _config.OPENCODE_THEME_FILE
+            _atomic_write_json_path(path, data)
+            # mantén también opencode cli.json
+        else:
+            path = sys.modules[__name__].THEME_FILE
+            _atomic_write_json_path(path, data)
+    except Exception:
+        pass
+    try:
+        _config.save_theme(name, mode)
+    except Exception:
+        pass
+    if link_opencode:
+        try:
+            _config.save_theme(name, mode)  # radio file too
+        except Exception:
+            pass
+
+
+save_theme_selection = save_theme
+persist_theme = save_theme
+write_theme = save_theme
+save_selected_theme = save_theme

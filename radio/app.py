@@ -14,19 +14,27 @@ from .deps import check_deps
 from .input import read_key_nonblocking
 from .metadata import IcyMetadataFetcher
 from .player import AudioPlayer
-from .theme import DEFAULT_THEME_NAME, available_themes, load_theme, palette
+from .theme import DEFAULT_THEME_NAME, available_themes, load_theme, palette, save_theme as _save_theme
 from .ui import render
 from . import __version__
 
 
 class AppState:
-    def __init__(self, stations, theme_name=None, theme_mode=None):
+    def __init__(self, stations, theme_name=None, theme_mode=None, link_opencode=None):
         self.all_stations = list(stations)
         self.recents = load_recents()
         self.selected = 0
         self.player = AudioPlayer()
         self.running = True
-        self.theme = load_theme(theme_name, theme_mode)
+        self.show_help = False
+        if link_opencode is None:
+            try:
+                from . import config as _cfg
+                link_opencode = _cfg.load_link_opencode()
+            except Exception:
+                link_opencode = False
+        self.link_opencode = bool(link_opencode)
+        self.theme = load_theme(theme_name, theme_mode, link_opencode=self.link_opencode)
         self.pal = palette(self.theme)
         self.metadata: dict = {}
         self.meta_lock = threading.Lock()
@@ -117,9 +125,38 @@ class AppState:
             index = -1
         name = names[(index + 1) % len(names)]
         mode = self.theme.get("_mode") or "dark"
-        self.theme = load_theme(name, mode)
+        self.theme = load_theme(name, mode, link_opencode=self.link_opencode)
         self.pal = palette(self.theme)
+        try:
+            _save_theme(self.theme.get("_name", name), self.theme.get("_mode", mode), link_opencode=self.link_opencode)
+        except Exception:
+            pass
+        try:
+            from . import config as _config
+            _config.save_theme(self.theme.get("_name", name), self.theme.get("_mode", mode))
+        except Exception:
+            pass
         return self.theme.get("_name", name)
+
+    def toggle_link_opencode(self) -> bool:
+        self.link_opencode = not self.link_opencode
+        try:
+            from . import config as _config
+            _config.save_link_opencode(self.link_opencode)
+        except Exception:
+            pass
+        # recargar tema desde la fuente correspondiente
+        try:
+            name = self.theme.get("_name")
+            mode = self.theme.get("_mode") or "dark"
+            self.theme = load_theme(name, mode, link_opencode=self.link_opencode)
+            self.pal = palette(self.theme)
+        except Exception:
+            pass
+        return self.link_opencode
+
+    def toggle_help(self) -> None:
+        self.show_help = not self.show_help
 
     def play_key(self, key: str) -> bool:
         """Teclas a-e (recientes) y 1-9 (catálogo). Devuelve True si la usó."""
@@ -158,6 +195,10 @@ def handle_key(state: AppState, key: str) -> None:
         state.toggle_mute()
     elif key in ("t", "T"):
         state.cycle_theme()
+    elif key in ("l", "L"):
+        state.toggle_link_opencode()
+    elif key in ("h", "H"):
+        state.toggle_help()
     elif key in ("RIGHT", "LEFT"):
         if state.player.playing:
             state.stop()
@@ -224,6 +265,17 @@ def main(argv=None) -> int:
         return 1
 
     state = AppState(STATIONS, theme_name=args.theme, theme_mode=args.mode)
+
+    if args.theme or args.mode:
+        try:
+            _save_theme(state.theme.get("_name"), state.theme.get("_mode"))
+        except Exception:
+            pass
+        try:
+            from . import config as _config
+            _config.save_theme(state.theme.get("_name"), state.theme.get("_mode"))
+        except Exception:
+            pass
 
     if args.station is not None:
         target = STATIONS[args.station - 1][0]

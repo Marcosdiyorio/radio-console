@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from .config import CHANNELS, MAX_VISIBLE, NUM_BANDS, SAMPLE_RATE, station_info
+from . import __version__
 
 BAND_LABELS = [f"B{i + 1}" for i in range(NUM_BANDS)]
 DB_LEVELS = ["0", "-6", "-12", "-20", "-30", "-40", "-60"]
@@ -186,12 +187,28 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
         Layout(name="vu", ratio=2),
     )
 
+    if getattr(state, "show_help", False):
+        help_text = Text()
+        help_text.append("Ayuda rápida\n\n", style=f"bold {bright}")
+        help_text.append("↑/↓ mover selección · Enter play/stop · Esp/m mute\n", style=text_color)
+        help_text.append("t cambia de tema · l activa/desactiva enlace con OpenCode\n", style=text_color)
+        help_text.append("a-e tocan recientes · 1-9 tocan estaciones del catálogo\n", style=text_color)
+        help_text.append("←/→ detiene la reproducción · q/Esc salir\n\n", style=text_color)
+        help_text.append("Para cargar nuevas emisoras: editá radio/stations.json\n", style=muted)
+        help_text.append("(o RADIO_STATIONS_FILE / DEFAULT_STATIONS en radio/config.py)\n\n", style=muted)
+        help_text.append(f"Versión: radio-agent {__version__}\n", style=muted)
+        help_text.append("Creado con ❤ diyorio.com.ar", style=f"bold {bright}")
+        layout["stations"].update(Panel(help_text, title="[bold]AYUDA (h para cerrar)[/]", border_style=border))
+        layout["vu"].update(Panel("", border_style=border))
+
     theme_name = state.theme.get("_name", "")
     theme_mode = state.theme.get("_mode", "")
+    link_state = "link on" if getattr(state, "link_opencode", False) else "link off"
     header = Text.assemble(
         ("♪  radio agent", f"bold {bright}"),
         ("   ·   console edition", muted),
         (f"   ·   {theme_name}/{theme_mode}", pal["faint"]),
+        (f"   ·   {link_state}", pal["faint"]),
     )
     layout["header"].update(
         Panel(Align.center(header, vertical="middle"), border_style=border)
@@ -253,22 +270,38 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
 
     body_height = max(4, height - 10 - 2)
     station_rows = max(3, min(MAX_VISIBLE, body_height - 2))
-    stations = _render_stations(state, pal, station_rows)
-    total = len(state.stations)
-    position = f"{state.selected + 1}/{total}" if total else "0/0"
-    layout["stations"].update(
-        Panel(
-            stations,
-            title=f"[bold]STATIONS[/]  [dim]{position}[/]",
-            border_style=border,
+    if not getattr(state, "show_help", False):
+        stations = _render_stations(state, pal, station_rows)
+        total = len(state.stations)
+        position = f"{state.selected + 1}/{total}" if total else "0/0"
+        layout["stations"].update(
+            Panel(
+                stations,
+                title=f"[bold]STATIONS[/]  [dim]{position}[/]",
+                border_style=border,
+            )
         )
-    )
+    else:
+        help_text = Text()
+        help_text.append("Ayuda rápida\n\n", style=f"bold {bright}")
+        help_text.append("↑/↓ mover selección · Enter play/stop · Esp/m mute\n", style=text_color)
+        help_text.append("t cambia de tema · l activa/desactiva enlace con OpenCode\n", style=text_color)
+        help_text.append("a-e tocan recientes · 1-9 tocan estaciones del catálogo\n", style=text_color)
+        help_text.append("←/→ detiene la reproducción · q/Esc salir\n\n", style=text_color)
+        help_text.append("Para cargar nuevas emisoras: editá radio/stations.json\n", style=muted)
+        help_text.append("(o RADIO_STATIONS_FILE / DEFAULT_STATIONS en radio/config.py)\n\n", style=muted)
+        help_text.append(f"Versión: radio-agent {__version__}\n", style=muted)
+        help_text.append("Creado con ❤ diyorio.com.ar", style=f"bold {bright}")
+        layout["stations"].update(Panel(help_text, title="[bold]AYUDA (h para cerrar)[/]", border_style=border))
+
 
     footer = Text.assemble(
         ("↑↓", f"bold {bright}"), (" mover  ", pal["green"]),
         ("Enter", f"bold {bright}"), (" play/stop  ", pal["green"]),
         ("Esp/m", f"bold {bright}"), (" mute  ", pal["green"]),
         ("t", f"bold {bright}"), (" tema  ", pal["green"]),
+        ("l", f"bold {bright}"), (" link  ", pal["green"]),
+        ("h", f"bold {bright}"), (" ayuda  ", pal["green"]),
         ("a-e", f"bold {bright}"), (" rec.  ", pal["green"]),
         ("q", f"bold {bright}"), (" salir", pal["green"]),
     )
