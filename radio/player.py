@@ -2,17 +2,22 @@
 from __future__ import annotations
 
 import array
+import cmath
 import math
 import shutil
 import subprocess
 import sys
 import threading
+from functools import lru_cache
 
 from .config import CHANNELS, CHUNK_BYTES, FFT_FRAMES, NUM_BANDS, SAMPLE_RATE
 from .deps import find_sink
 
 # Cortes de banda en Hz (7 bandas).
 _BAND_EDGES = [0, 120, 300, 700, 1500, 3000, 6000, 22050]
+# Compensación de inclinación: la música tiene menos energía en agudos.
+BAND_TILT_DB = [0.0, 3.0, 6.0, 9.0, 12.0, 15.0, 18.0]
+VU_FLOOR_DB = -60.0
 
 
 def _pcm_samples(data: bytes) -> array.array | None:
@@ -50,44 +55,82 @@ def compute_rms(data: bytes) -> tuple[float, float]:
     return _rms(left), _rms(right)
 
 
-def _fft_mag(samples: list[float]) -> list[float]:
+def _fft_size(length: int) -> int:
     size = 1
-    while size < len(samples):
+    while size < length:
         size <<= 1
-    if size == 0:
-        return []
-    padded = samples + [0.0] * (size - len(samples))
-    values = [complex(v) for v in padded]
+    return size
 
-    j = 0
-    for i in range(1, size):
-        bit = size >> 1
-        while j & bit:
-            j ^= bit
-            bit >>= 1
-        j ^= bit
-        if i < j:
-            values[i], values[j] = values[j], values[i]
 
+@lru_cache(maxsize=8)
+def _fft_plan(size: int) -> tuple[list[int], list[complex]]:
+    bits = size.bit_length() - 1
+    reverse = [int(format(i, f"0{bits}b")[::-1], 2) if bits else 0 for i in range(size)]
+    twiddles = [cmath.exp(-2j * math.pi * k / size) for k in range(size // 2)]
+    return reverse, twiddles
+
+
+def _fft_complex(values: list[complex], size: int) -> list[complex]:
+    reverse, twiddles = _fft_plan(size)
+    values = [values[r] for r in reverse]
     length = 2
     while length <= size:
-        angle = -2 * math.pi / length
-        step = complex(math.cos(angle), math.sin(angle))
-        half = length // 2
+        half = length >> 1
+        stage = twiddles[:: size // length]
         for start in range(0, size, length):
-            weight = complex(1, 0)
-            for k in range(half):
-                even = values[start + k]
-                odd = values[start + k + half] * weight
-                values[start + k] = even + odd
-                values[start + k + half] = even - odd
-                weight *= step
+            mid = start + half
+            end = start + length
+            odds = [v * w for v, w in zip(values[mid:end], stage)]
+            evens = values[start:mid]
+            values[start:mid] = [e + o for e, o in zip(evens, odds)]
+            values[mid:end] = [e - o for e, o in zip(evens, odds)]
         length <<= 1
-    return [abs(v) for v in values[: size // 2]]
+    return values
+
+
+def _fft_mag(samples) -> list[float]:
+    """Magnitudes de la FFT real (bins 0..N/2-1) usando una FFT compleja de N/2."""
+    if not len(samples):
+        return []
+    size = _fft_size(len(samples))
+    padded = list(samples) + [0.0] * (size - len(samples))
+    if size < 4:
+        return [abs(v) for v in _fft_complex([complex(v) for v in padded], size)[: size // 2]]
+    half = size // 2
+    packed = [complex(padded[2 * i], padded[2 * i + 1]) for i in range(half)]
+    spectrum = _fft_complex(packed, half)
+    _, twiddles = _fft_plan(size)
+    magnitudes = []
+    for k in range(half):
+        zk = spectrum[k]
+        zc = spectrum[(half - k) % half].conjugate()
+        even = (zk + zc) * 0.5
+        odd = (zk - zc) * -0.5j
+        magnitudes.append(abs(even + twiddles[k] * odd))
+    return magnitudes
+
+
+@lru_cache(maxsize=8)
+def _window(frames: int) -> tuple[list[float], float]:
+    window = [0.5 - 0.5 * math.cos(2 * math.pi * i / max(1, frames - 1)) for i in range(frames)]
+    return window, sum(w * w for w in window)
+
+
+@lru_cache(maxsize=8)
+def _bin_bands(size: int) -> list[int]:
+    """Banda (o -1) de cada bin del espectro de un FFT de `size` puntos."""
+    bin_hz = SAMPLE_RATE / size
+    mapping = []
+    for index in range(size // 2):
+        hz = index * bin_hz
+        mapping.append(
+            next((b for b in range(NUM_BANDS) if _BAND_EDGES[b] <= hz < _BAND_EDGES[b + 1]), -1)
+        )
+    return mapping
 
 
 def compute_bands(data: bytes, max_frames: int | None = None) -> list[float]:
-    """Espectro aproximado en 7 bandas, normalizado 0..1."""
+    """Nivel por banda en dBFS mapeado a 0..1 (-60 dB → 0, 0 dB → 1)."""
     samples = _pcm_samples(data)
     if samples is None:
         return [0.0] * NUM_BANDS
@@ -100,44 +143,34 @@ def compute_bands(data: bytes, max_frames: int | None = None) -> list[float]:
         samples = samples[-(max_frames * CHANNELS):]
         frames = max_frames
 
-    mono = [0.0] * frames
-    for i in range(frames):
-        value = samples[i * CHANNELS]
-        if CHANNELS > 1:
-            value = (value + samples[i * CHANNELS + 1]) // 2
-        mono[i] = value / 32768.0
+    left = samples[0::CHANNELS]
+    if CHANNELS > 1:
+        mono = [(a + b) / 65536.0 for a, b in zip(left, samples[1::CHANNELS])]
+    else:
+        mono = [v / 32768.0 for v in left]
 
-    faded = [
-        mono[i] * (0.5 - 0.5 * math.cos(2 * math.pi * i / max(1, frames - 1)))
-        for i in range(frames)
-    ]
-    magnitudes = _fft_mag(faded)
+    window, window_energy = _window(frames)
+    if window_energy <= 0:
+        return [0.0] * NUM_BANDS
+    magnitudes = _fft_mag([m * w for m, w in zip(mono, window)])
     if not magnitudes:
         return [0.0] * NUM_BANDS
 
-    fft_size = 1
-    while fft_size < frames:
-        fft_size <<= 1
-    bin_hz = SAMPLE_RATE / fft_size
-
+    fft_size = _fft_size(frames)
     power = [0.0] * NUM_BANDS
-    counts = [0] * NUM_BANDS
-    for index, magnitude in enumerate(magnitudes):
-        hz = index * bin_hz
-        for band in range(NUM_BANDS):
-            if _BAND_EDGES[band] <= hz < _BAND_EDGES[band + 1]:
-                power[band] += magnitude * magnitude
-                counts[band] += 1
-                break
+    for band, magnitude in zip(_bin_bands(fft_size), magnitudes):
+        if band >= 0:
+            power[band] += magnitude * magnitude
 
-    bands = [
-        math.sqrt(power[b] / counts[b]) if counts[b] else 0.0
-        for b in range(NUM_BANDS)
-    ]
-    peak = max(bands) if bands else 0.0
-    if peak > 0:
-        bands = [min(1.0, value / max(peak, 0.05)) for value in bands]
-    return [min(1.0, value * 2.5) for value in bands]
+    levels = []
+    for band in range(NUM_BANDS):
+        rms = math.sqrt(2.0 * power[band] / (fft_size * window_energy))
+        if rms <= 0:
+            levels.append(0.0)
+            continue
+        db = 20.0 * math.log10(rms) + BAND_TILT_DB[band]
+        levels.append(min(1.0, max(0.0, (db - VU_FLOOR_DB) / -VU_FLOOR_DB)))
+    return levels
 
 
 class AudioPlayer:

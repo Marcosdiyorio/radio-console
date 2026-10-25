@@ -13,6 +13,7 @@ from .config import MAX_RECENT, RENDER_FPS, STATIONS, add_recent, load_recents
 from .deps import check_deps
 from .input import read_key_nonblocking
 from .metadata import IcyMetadataFetcher
+from .playlist import resolve_stream_url
 from .player import AudioPlayer
 from .theme import DEFAULT_THEME_NAME, available_themes, load_theme, palette, save_theme as _save_theme
 from .ui import render
@@ -103,10 +104,12 @@ class AppState:
         if not (0 <= index < len(self.stations)):
             return
         name, url, *_ = self.stations[index]
+        url = resolve_stream_url(url)
         self.selected = index
         self.player.play(name, url)
         add_recent(self.recents, name)
         self.rebuild()
+        self.selected = 0
         self.fetcher.start(url, name)
 
     def stop(self) -> None:

@@ -11,10 +11,13 @@ from rich.panel import Panel
 from rich.text import Text
 
 from .config import CHANNELS, MAX_VISIBLE, NUM_BANDS, SAMPLE_RATE, station_info
+from .player import VU_FLOOR_DB
 from . import __version__
 
-BAND_LABELS = [f"B{i + 1}" for i in range(NUM_BANDS)]
-DB_LEVELS = ["0", "-6", "-12", "-20", "-30", "-40", "-60"]
+BAND_LABELS = ["60", "190", "460", "1k", "2k", "4k", "11k"]
+DB_MARKS = [0, -6, -12, -20, -30, -40, -60]
+LABEL_WIDTH = max(len(label) for label in BAND_LABELS)
+SLOT_MIN = LABEL_WIDTH + 1
 
 
 def _bitrate(name: str) -> str:
@@ -50,16 +53,23 @@ def _clip(value: str, max_length: int) -> str:
     return value[: max_length - 1] + "…"
 
 
+def _vu_outer_width(width: int) -> int:
+    """Ancho del panel VU: proporción 2/5, con mínimo para que quepan las etiquetas."""
+    # Panel: 2 de borde + 2 de padding horizontal; 5 de eje + bandas.
+    minimum = 4 + 5 + NUM_BANDS * SLOT_MIN
+    return max(minimum, int(width * 2 / 5))
+
+
 def _vu_geometry(width: int, height: int) -> tuple[int, int, int]:
     """Devuelve (filas, ancho de celda, separación entre bandas)."""
-    vu_outer = max(24, int(width * 2 / 5))
-    # Panel: 2 de borde + 2 de padding horizontal.
-    inner = max(18, vu_outer - 4)
-    cell, gap = 1, 1
+    inner = _vu_outer_width(width) - 4
+    cell, gap = 1, SLOT_MIN - 1
     for candidate_cell in range(6, 0, -1):
         for candidate_gap in (2, 1):
-            needed = 5 + NUM_BANDS * candidate_cell + (NUM_BANDS - 1) * candidate_gap
-            if needed <= inner:
+            slot = candidate_cell + candidate_gap
+            if slot < SLOT_MIN:
+                continue
+            if 5 + NUM_BANDS * slot <= inner:
                 cell, gap = candidate_cell, candidate_gap
                 break
         else:
@@ -67,6 +77,16 @@ def _vu_geometry(width: int, height: int) -> tuple[int, int, int]:
         break
     rows = max(3, min(16, height - 14))
     return rows, cell, gap
+
+
+def _db_rows(rows: int) -> dict[int, str]:
+    """Fila (0 = abajo) → etiqueta de dB, ubicada según el valor real."""
+    marks: dict[int, str] = {}
+    for mark in DB_MARKS:
+        fraction = (mark - VU_FLOOR_DB) / -VU_FLOOR_DB
+        row = round(fraction * (rows - 1))
+        marks.setdefault(row, str(mark))
+    return marks
 
 
 def _render_vu(player, pal: dict, rows: int, cell: int, gap: int) -> Text:
@@ -80,39 +100,36 @@ def _render_vu(player, pal: dict, rows: int, cell: int, gap: int) -> Text:
     steps = len(gradient)
     muted = pal["secondary"]
     text = Text()
-    blank_prefix = " " * 4 + "│"
-    blank_gap = " " * gap
+    slot = cell + gap
+    lead = (slot - cell) // 2
+    trail = slot - cell - lead
+    db_rows = _db_rows(rows)
 
-    last_db: int | None = None
     for row in range(rows - 1, -1, -1):
         fraction = (row + 0.5) / rows
-        db_index = round((rows - 1 - row) / max(1, rows - 1) * (len(DB_LEVELS) - 1))
-        if db_index == last_db:
-            text.append(blank_prefix, style=muted)
+        if row in db_rows:
+            text.append(f"{db_rows[row]:>3s} │", style=muted)
         else:
-            text.append(f"{DB_LEVELS[db_index]:>3s} │", style=muted)
-            last_db = db_index
+            text.append(" " * 4 + "│", style=muted)
         bar_style = gradient[min(steps - 1, max(0, int(fraction * (steps - 1))))]
         for band in range(NUM_BANDS):
+            text.append(" " * lead)
             if bands[band] >= fraction:
                 text.append("█" * cell, style=bar_style)
             elif peaks[band] >= fraction:
                 text.append("▒" * cell, style=pal["red"])
             else:
                 text.append(" " * cell)
-            if band < NUM_BANDS - 1:
-                text.append(blank_gap)
+            text.append(" " * trail)
         text.append("\n")
 
     text.append("    ┴", style=muted)
-    for band in range(NUM_BANDS):
-        text.append("─" * (cell + (gap if band < NUM_BANDS - 1 else 0)), style=muted)
+    text.append("─" * (slot * NUM_BANDS), style=muted)
     text.append("\n")
 
     text.append("     ")
-    for band, label in enumerate(BAND_LABELS):
-        width = cell + (gap if band < NUM_BANDS - 1 else 0)
-        text.append(f"{label:^{width}s}", style=muted)
+    for label in BAND_LABELS:
+        text.append(f"{label:^{slot}s}", style=muted)
 
     return text
 
@@ -148,7 +165,7 @@ def _render_stations(state, pal: dict, visible: int) -> Text:
             text.append("▸ ", style=f"bold {pal['bright_green']}")
         else:
             text.append("  ")
-        if is_playing:
+        if is_playing and index < recent_count:
             text.append("▶ ", style=f"bold {pal['bright_green']}")
         else:
             text.append("  ")
@@ -184,7 +201,7 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
     )
     layout["body"].split_row(
         Layout(name="stations", ratio=3),
-        Layout(name="vu", ratio=2),
+        Layout(name="vu", size=_vu_outer_width(width)),
     )
 
     if getattr(state, "show_help", False):
@@ -259,7 +276,7 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
         rows = max(3, rows - 1)
     vu = _render_vu(player, pal, rows, cell, gap)
     if player.error:
-        vu_width = max(10, int(width * 2 / 5) - 4)
+        vu_width = max(10, _vu_outer_width(width) - 4)
         vu.append(f"\n⚠  {_clip(player.error, vu_width - 3)}", style=f"bold {pal['red']}")
     vu_title = "[bold]VU · 7 bandas[/]"
     if getattr(player, "muted", False):

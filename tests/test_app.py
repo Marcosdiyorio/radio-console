@@ -63,6 +63,14 @@ class AppStateTests(unittest.TestCase):
         self.assertFalse(self.state.play_key("a"))
         self.state.player.play.assert_not_called()
 
+    def test_playing_moves_cursor_to_first_recent(self):
+        self.state.recents = ["Metro 95.1", "Blue 100.7"]
+        self.state.rebuild()
+        self.state.selected = self.state.n_recents + 2
+        self.state.start(self.state.selected)
+        self.assertEqual(self.state.selected, 0)
+        self.assertEqual(self.state.stations[0][0], self.state.player.play.call_args.args[0])
+
     def test_digit_key_plays_catalog_entry(self):
         self.state.recents = ["Metro 95.1"]
         self.state.rebuild()

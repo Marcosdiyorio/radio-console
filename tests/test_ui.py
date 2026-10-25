@@ -8,7 +8,7 @@ from rich.console import Console
 from radio import config
 from radio.app import AppState
 from radio.config import STATIONS
-from radio.ui import _vu_geometry, render
+from radio.ui import _vu_geometry, _vu_outer_width, render
 
 
 def make_state(recents):
@@ -67,8 +67,8 @@ class UiTests(unittest.TestCase):
     def test_vu_labels_close(self):
         state = make_state([])
         output = self.render_text(state, 100, 34)
-        band_line = next(line for line in output.splitlines() if "B1" in line)
-        self.assertIn("B7", band_line)
+        band_line = next(line for line in output.splitlines() if "60" in line and "11k" in line)
+        self.assertIn("190", band_line)
         self.assertLessEqual(len(band_line), 100)
 
     def test_muted_state_is_visible(self):
@@ -84,10 +84,11 @@ class UiTests(unittest.TestCase):
     def test_geometry_fits_inner_width(self):
         for width in (80, 100, 120, 140, 200):
             rows, cell, gap = _vu_geometry(width, 34)
-            inner = max(18, int(width * 2 / 5) - 4)
-            needed = 5 + config.NUM_BANDS * cell + (config.NUM_BANDS - 1) * gap
+            inner = _vu_outer_width(width) - 4
+            needed = 5 + config.NUM_BANDS * (cell + gap)
             self.assertLessEqual(needed, inner, width)
             self.assertGreaterEqual(rows, 3)
+            self.assertGreaterEqual(cell + gap, 4)
 
 
 if __name__ == "__main__":

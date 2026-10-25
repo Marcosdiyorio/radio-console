@@ -50,6 +50,18 @@ class BandTests(unittest.TestCase):
         bands = compute_bands(tone(200))
         self.assertEqual(bands.index(max(bands)), 1)
 
+    def test_silence_is_zero_in_every_band(self):
+        self.assertEqual(compute_bands(tone(1000, amplitude=0)), [0.0] * NUM_BANDS)
+
+    def test_high_tone_moves_top_band(self):
+        bands = compute_bands(tone(8000, amplitude=4000))
+        self.assertEqual(bands.index(max(bands)), 6)
+        self.assertGreater(bands[6], 0.5)
+
+    def test_quiet_signal_stays_low(self):
+        quiet = tone(1000, amplitude=40)
+        self.assertLess(max(compute_bands(quiet)), 0.2)
+
     def test_max_frames_limits_work(self):
         bands = compute_bands(tone(1000), max_frames=512)
         self.assertEqual(len(bands), NUM_BANDS)

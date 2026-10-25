@@ -52,12 +52,16 @@ Mute does not cut the stream: it keeps reading and sends silence to the sink, so
 VU drops to zero and you resume at the same point when unmuting. Mute state persists
 across stations. Recents are shown first with letters (`a`–`e`); below them the full
 catalog keeps its `stations.json` order with fixed numbers `1`…`N`, so a number always
-plays the same station. Playing a station makes it the most recent (the recents block
-reorders) without moving the selection.
+plays the same station. Playing a station makes it the most recent: it moves to `a`
+and the cursor follows it there. The `▶` marks the playing station in the recents block;
+the catalog row is shown in bold.
 
 Metadata ("now playing") comes from ICY/SHOUTcast for direct streams and from ID3 tags
 inside the segments for HLS (`.m3u8`) streams. If the metadata is missing or the
 connection drops, it retries automatically while the station plays.
+
+Stations can point to `.pls` or `.m3u` playlists: Radio resolves them to the real stream
+URL before connecting (`.m3u8` HLS links are used as-is).
 
 ### CLI
 ```bash
@@ -101,6 +105,7 @@ radio/
   deps.py        ffmpeg and audio sink detection
   input.py       non-blocking keyboard input
   metadata.py    ICY/SHOUTcast y ID3 (HLS) metadata, con reintentos
+  playlist.py    resuelve playlists .pls/.m3u a la URL del stream
   player.py      ffmpeg -> PCM -> sink + levels/VU
   theme.py       OpenCode theme loader and resolver
   ui.py          rich TUI rendering
@@ -164,11 +169,15 @@ cero, así al desmutear seguís en el mismo punto. El estado de mute se mantiene
 cambiar de estación. Los recientes se muestran primero con letras (`a`–`e`); debajo
 queda el catálogo completo en el orden de `stations.json` con números fijos `1`…`N`,
 así un número siempre reproduce la misma estación. Al reproducir una estación pasa a
-ser el reciente más reciente (el bloque de recientes se reordena) sin mover la selección.
+ser el reciente más reciente: se mueve a `a` y el cursor la sigue. El `▶` marca la
+emisora que suena en el bloque de recientes; en el catálogo aparece en negrita.
 
 La metadata ("now playing") sale de ICY/SHOUTcast en streams directos y de tags ID3
 dentro de los segmentos en streams HLS (`.m3u8`). Si falta o se corta la conexión,
 reintenta automáticamente mientras la estación suena.
+
+Las emisoras pueden apuntar a playlists `.pls` o `.m3u`: Radio las resuelve a la URL
+real del stream antes de conectar (los enlaces HLS `.m3u8` se usan tal cual).
 
 ### CLI
 ```bash
@@ -214,6 +223,7 @@ radio/
   deps.py        detección de ffmpeg y sink de audio
   input.py       lectura no bloqueante del teclado
   metadata.py    metadata ICY/SHOUTcast y ID3 (HLS), con reintentos
+  playlist.py    resuelve playlists .pls/.m3u a la URL del stream
   player.py      pipeline ffmpeg → PCM → sink + niveles/VU
   theme.py       carga y resolución de temas OpenCode
   ui.py          render de la TUI con rich
