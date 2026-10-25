@@ -18,6 +18,10 @@ class AppStateTests(unittest.TestCase):
             config, "RECENT_FILE", Path(self.tmp.name) / "recent.json"
         )
         self.patch.start()
+        self.volume_patch = mock.patch.object(
+            config, "VOLUME_FILE", Path(self.tmp.name) / "volume.json"
+        )
+        self.volume_patch.start()
         self.state = AppState(STATIONS, theme_name="matrix", theme_mode="dark")
         self.state.player.play = MagicMock()
         self.state.player.stop = MagicMock()
@@ -26,8 +30,33 @@ class AppStateTests(unittest.TestCase):
         self.state.fetcher.stop = MagicMock()
 
     def tearDown(self):
+        self.volume_patch.stop()
         self.patch.stop()
         self.tmp.cleanup()
+
+    def test_arrows_change_volume_and_keep_playing(self):
+        self.state.player.playing = True
+        handle_key(self.state, "LEFT")
+        self.assertEqual(self.state.volume, 95)
+        handle_key(self.state, "RIGHT")
+        handle_key(self.state, "RIGHT")
+        self.assertEqual(self.state.volume, 100)
+        self.state.player.stop.assert_not_called()
+
+    def test_plus_minus_change_volume_within_bounds(self):
+        handle_key(self.state, "-")
+        self.assertEqual(self.state.volume, 95)
+        handle_key(self.state, "+")
+        handle_key(self.state, "=")
+        self.assertEqual(self.state.volume, 100)
+        for _ in range(30):
+            handle_key(self.state, "-")
+        self.assertEqual(self.state.volume, 0)
+        self.assertEqual(self.state.player.volume, 0.0)
+
+    def test_volume_is_persisted(self):
+        handle_key(self.state, "-")
+        self.assertEqual(config.load_volume(), 95)
 
     def test_recents_are_shown_first(self):
         self.state.recents = ["Metro 95.1", "Rock & Pop 95.9"]

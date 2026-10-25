@@ -45,11 +45,11 @@ radio-agent
 | `h` | Show/hide help popup |
 | `a`–`e` | Play recent 1–5 (letter shown in the list) |
 | `1`–`9` | Play station N from the catalog |
-| `←` `→` | Stop playback |
+| `←` `→` or `+` `-` | Volume down / up (5% steps, saved between runs) |
 | `q`, `Esc` | Quit |
 
 Mute does not cut the stream: it keeps reading and sends silence to the sink, so the
-VU drops to zero and you resume at the same point when unmuting. Mute state persists
+VU keeps moving in gray (nothing is heard) and you resume at the same point when unmuting. Mute state persists
 across stations. Recents are shown first with letters (`a`–`e`); below them the full
 catalog keeps its `stations.json` order with fixed numbers `1`…`N`, so a number always
 plays the same station. Playing a station makes it the most recent: it moves to `a`
@@ -94,7 +94,8 @@ used. Override the path with `RADIO_STATIONS_FILE=/path/stations.json`.
 You can also edit `radio/config.py` → `DEFAULT_STATIONS`.
 
 The last five recents are stored in `~/.radio_agent_recent.json`. Override the path
-with `RADIO_RECENT_FILE=/path/file.json`.
+with `RADIO_RECENT_FILE=/path/file.json`. The volume is kept in
+`~/.radio_agent_volume.json` (override with `RADIO_VOLUME_FILE`).
 
 ### Project layout
 ```
@@ -161,11 +162,11 @@ radio-agent
 | `h` | Mostrar/ocultar ventana de ayuda |
 | `a` – `e` | Reproducir el reciente 1–5 (letra que figura en la lista) |
 | `1` – `9` | Reproducir la estación N del catálogo visible |
-| `←` `→` | Detener la reproducción |
+| `←` `→` o `+` `-` | Bajar / subir el volumen (pasos de 5 %, se guarda entre ejecuciones) |
 | `q`, `Esc` | Salir |
 
-El mute no corta el stream: sigue sonando internamente en silencio y el VU baja a
-cero, así al desmutear seguís en el mismo punto. El estado de mute se mantiene al
+El mute no corta el stream: sigue sonando internamente en silencio y el VU sigue
+moviéndose en gris (no se oye nada), así al desmutear seguís en el mismo punto. El estado de mute se mantiene al
 cambiar de estación. Los recientes se muestran primero con letras (`a`–`e`); debajo
 queda el catálogo completo en el orden de `stations.json` con números fijos `1`…`N`,
 así un número siempre reproduce la misma estación. Al reproducir una estación pasa a
@@ -212,7 +213,8 @@ El catálogo está en `radio/stations.json` (formato JSON: `name`, `url`, `genre
 `radio/config.py` → `DEFAULT_STATIONS`.
 
 Los últimos cinco recientes se guardan en `~/.radio_agent_recent.json`.
-Se puede cambiar la ruta con `RADIO_RECENT_FILE=/ruta/archivo.json`.
+Se puede cambiar la ruta con `RADIO_RECENT_FILE=/ruta/archivo.json`. El volumen se
+guarda en `~/.radio_agent_volume.json` (se cambia con `RADIO_VOLUME_FILE`).
 
 ### Estructura
 ```

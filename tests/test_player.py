@@ -3,7 +3,7 @@ import struct
 import unittest
 
 from radio.config import CHANNELS, NUM_BANDS, SAMPLE_RATE
-from radio.player import AudioPlayer, compute_bands, compute_rms
+from radio.player import AudioPlayer, _apply_gain, compute_bands, compute_rms
 
 
 def pcm(samples) -> bytes:
@@ -66,6 +66,22 @@ class BandTests(unittest.TestCase):
         bands = compute_bands(tone(1000), max_frames=512)
         self.assertEqual(len(bands), NUM_BANDS)
         self.assertEqual(bands.index(max(bands)), 3)
+
+
+class GainTests(unittest.TestCase):
+    def test_half_gain_halves_samples(self):
+        data = pcm([1000, -1000, 20000, -20000])
+        self.assertEqual(_apply_gain(data, 0.5), pcm([500, -500, 10000, -10000]))
+
+    def test_zero_gain_is_silence(self):
+        self.assertEqual(_apply_gain(pcm([1000, -1000]), 0.0), b"\x00" * 4)
+
+    def test_full_gain_is_untouched(self):
+        data = pcm([1000, -1000])
+        self.assertIs(_apply_gain(data, 1.0), data)
+
+    def test_no_overflow_at_full_scale(self):
+        self.assertEqual(_apply_gain(pcm([32767, -32768]), 0.99), pcm([32439, -32440]))
 
 
 class MuteTests(unittest.TestCase):

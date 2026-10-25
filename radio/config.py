@@ -24,6 +24,11 @@ THEME_FILE = Path(_theme_env).expanduser() if _theme_env else Path.home() / ".ra
 _opencode_theme_env = os.environ.get("RADIO_OPENCODE_THEME_FILE")
 OPENCODE_THEME_FILE = Path(_opencode_theme_env).expanduser() if _opencode_theme_env else Path.home() / ".config" / "opencode" / "cli.json"
 
+_volume_env = os.environ.get("RADIO_VOLUME_FILE")
+VOLUME_FILE = Path(_volume_env).expanduser() if _volume_env else Path.home() / ".radio_agent_volume.json"
+DEFAULT_VOLUME = 100
+VOLUME_STEP = 5
+
 _link_env = os.environ.get("RADIO_LINK_FILE")
 LINK_FILE = Path(_link_env).expanduser() if _link_env else Path.home() / ".radio_agent_link.json"
 
@@ -255,3 +260,19 @@ def save_link_opencode(value: bool) -> None:
                 os.unlink(tmp)
     except Exception:
         pass
+
+
+def load_volume() -> int:
+    try:
+        if VOLUME_FILE.exists():
+            data = json.loads(VOLUME_FILE.read_text(encoding="utf-8"))
+            value = data.get("volume") if isinstance(data, dict) else data
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return max(0, min(100, int(value)))
+    except Exception:
+        pass
+    return DEFAULT_VOLUME
+
+
+def save_volume(percent: int) -> None:
+    _atomic_write_json(VOLUME_FILE, {"volume": max(0, min(100, int(percent)))})

@@ -22,6 +22,30 @@ class StationOrderTests(unittest.TestCase):
         self.assertEqual(config.station_info(("A", "u")), ("A", "u", "", ""))
 
 
+class VolumePersistenceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "volume.json"
+        self.patch = mock.patch.object(config, "VOLUME_FILE", self.path)
+        self.patch.start()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.tmp.cleanup()
+
+    def test_default_when_missing(self):
+        self.assertEqual(config.load_volume(), config.DEFAULT_VOLUME)
+
+    def test_save_and_load(self):
+        config.save_volume(40)
+        self.assertEqual(config.load_volume(), 40)
+        self.assertEqual(json.loads(self.path.read_text()), {"volume": 40})
+
+    def test_load_clamps_out_of_range(self):
+        self.path.write_text(json.dumps({"volume": 250}))
+        self.assertEqual(config.load_volume(), 100)
+
+
 class RecentPersistenceTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

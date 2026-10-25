@@ -71,6 +71,26 @@ class UiTests(unittest.TestCase):
         self.assertIn("190", band_line)
         self.assertLessEqual(len(band_line), 100)
 
+    def test_volume_shown_at_end_of_status(self):
+        state = make_state(["Metro 95.1"])
+        state.volume = 65
+        output = self.render_text(state, 100, 34)
+        self.assertIn("STATUS: ○ STOPPED · VOL 65%", output)
+        state.player.playing = True
+        state.player.current_name = "Metro 95.1"
+        output = self.render_text(state, 80, 24)
+        self.assertIn("VOL 65%", output)
+
+    def test_vu_is_gray_while_muted(self):
+        from radio.ui import _gray_gradient, _render_vu
+        state = make_state(["Metro 95.1"])
+        state.player.bands = [0.9] * 7
+        state.player.muted = True
+        text = _render_vu(state.player, state.pal, 6, 3, 1)
+        styles = {str(span.style) for span in text.spans if "█" in text.plain[span.start:span.end]}
+        self.assertGreater(len(styles), 3)
+        self.assertTrue(styles <= set(_gray_gradient(state.pal)))
+
     def test_muted_state_is_visible(self):
         state = make_state(["Metro 95.1"])
         state.player.playing = True

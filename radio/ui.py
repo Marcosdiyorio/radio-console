@@ -45,6 +45,18 @@ def _green_gradient(pal: dict, steps: int = 8) -> list[str]:
             out.append(_blend_hex(anchors[1], anchors[2], (t - 0.5) / 0.5))
     return out
 
+def _gray_gradient(pal: dict, steps: int = 8) -> list[str]:
+    anchors = [pal["faint"], pal["secondary"], pal["primary"]]
+    out = []
+    for i in range(steps):
+        t = i / max(1, steps - 1)
+        if t <= 0.5:
+            out.append(_blend_hex(anchors[0], anchors[1], t / 0.5))
+        else:
+            out.append(_blend_hex(anchors[1], anchors[2], (t - 0.5) / 0.5))
+    return out
+
+
 def _clip(value: str, max_length: int) -> str:
     if max_length <= 1:
         return ""
@@ -96,7 +108,13 @@ def _render_vu(player, pal: dict, rows: int, cell: int, gap: int) -> Text:
     bands = (bands + [0.0] * NUM_BANDS)[:NUM_BANDS]
     peaks = (peaks + [0.0] * NUM_BANDS)[:NUM_BANDS]
 
-    gradient = _green_gradient(pal)
+    gray_mode = bool(getattr(player, "muted", False))
+    if gray_mode:
+        gradient = _gray_gradient(pal)
+        peak_style = pal["faint"]
+    else:
+        gradient = _green_gradient(pal)
+        peak_style = pal["red"]
     steps = len(gradient)
     muted = pal["secondary"]
     text = Text()
@@ -117,7 +135,7 @@ def _render_vu(player, pal: dict, rows: int, cell: int, gap: int) -> Text:
             if bands[band] >= fraction:
                 text.append("█" * cell, style=bar_style)
             elif peaks[band] >= fraction:
-                text.append("▒" * cell, style=pal["red"])
+                text.append("▒" * cell, style=peak_style)
             else:
                 text.append(" " * cell)
             text.append(" " * trail)
@@ -204,20 +222,6 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
         Layout(name="vu", size=_vu_outer_width(width)),
     )
 
-    if getattr(state, "show_help", False):
-        help_text = Text()
-        help_text.append("Ayuda rápida\n\n", style=f"bold {bright}")
-        help_text.append("↑/↓ mover selección · Enter play/stop · Esp/m mute\n", style=text_color)
-        help_text.append("t cambia de tema · l activa/desactiva enlace con OpenCode\n", style=text_color)
-        help_text.append("a-e tocan recientes · 1-9 tocan estaciones del catálogo\n", style=text_color)
-        help_text.append("←/→ detiene la reproducción · q/Esc salir\n\n", style=text_color)
-        help_text.append("Para cargar nuevas emisoras: editá radio/stations.json\n", style=muted)
-        help_text.append("(o RADIO_STATIONS_FILE / DEFAULT_STATIONS en radio/config.py)\n\n", style=muted)
-        help_text.append(f"Versión: radio-agent {__version__}\n", style=muted)
-        help_text.append("Creado con ❤ diyorio.com.ar", style=f"bold {bright}")
-        layout["stations"].update(Panel(help_text, title="[bold]AYUDA (h para cerrar)[/]", border_style=border))
-        layout["vu"].update(Panel("", border_style=border))
-
     theme_name = state.theme.get("_name", "")
     theme_mode = state.theme.get("_mode", "")
     link_state = "link on" if getattr(state, "link_opencode", False) else "link off"
@@ -238,6 +242,7 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
     now.append("NOW PLAYING: ", style=f"bold {bright}")
     max_title = max(10, width - 4 - len("NOW PLAYING: "))
     max_status = max(10, width - 4)
+    volume_tag = f" · VOL {int(getattr(state, 'volume', 100))}%"
     if player.playing and player.current_name:
         if metadata.get("artist") or metadata.get("track"):
             title = metadata.get("track", "")
@@ -265,10 +270,10 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
         word = "MUTED" if muted else "PLAYING"
         status = f"STATUS: {dot} {word} · " + " · ".join(d for d in details if d)
         status_style = f"bold {pal['yellow']}" if muted else f"bold {pal['green']}"
-        now.append(_clip(status, max_status), style=status_style)
+        now.append(_clip(status, max_status - len(volume_tag)) + volume_tag, style=status_style)
     else:
         now.append("Detenido", style=muted)
-        now.append("\nSTATUS: ○ STOPPED", style=muted)
+        now.append(f"\nSTATUS: ○ STOPPED{volume_tag}", style=muted)
     layout["now"].update(Panel(now, border_style=border))
 
     rows, cell, gap = _vu_geometry(width, height)
@@ -304,7 +309,7 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
         help_text.append("↑/↓ mover selección · Enter play/stop · Esp/m mute\n", style=text_color)
         help_text.append("t cambia de tema · l activa/desactiva enlace con OpenCode\n", style=text_color)
         help_text.append("a-e tocan recientes · 1-9 tocan estaciones del catálogo\n", style=text_color)
-        help_text.append("←/→ detiene la reproducción · q/Esc salir\n\n", style=text_color)
+        help_text.append("←/→ o +/- cambian el volumen · q/Esc salir\n\n", style=text_color)
         help_text.append("Para cargar nuevas emisoras: editá radio/stations.json\n", style=muted)
         help_text.append("(o RADIO_STATIONS_FILE / DEFAULT_STATIONS en radio/config.py)\n\n", style=muted)
         help_text.append(f"Versión: radio-agent {__version__}\n", style=muted)

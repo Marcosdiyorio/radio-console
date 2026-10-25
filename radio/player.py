@@ -36,6 +36,21 @@ def _pcm_samples(data: bytes) -> array.array | None:
     return samples
 
 
+def _apply_gain(data: bytes, gain: float) -> bytes:
+    """Escala PCM s16le por `gain` (0..1) con recorte; sin copia si gain es 1."""
+    if gain >= 0.999:
+        return data
+    samples = _pcm_samples(data)
+    if samples is None:
+        return data
+    if gain <= 0.0:
+        return b"\x00" * (len(samples) * 2)
+    scaled = array.array("h", [max(-32768, min(32767, int(v * gain))) for v in samples])
+    if sys.byteorder == "big":
+        scaled.byteswap()
+    return scaled.tobytes()
+
+
 def compute_rms(data: bytes) -> tuple[float, float]:
     """Nivel RMS normalizado (0..1) por canal izquierdo/derecho."""
     samples = _pcm_samples(data)
@@ -192,6 +207,7 @@ class AudioPlayer:
         self.current_url: str | None = None
         self.error: str | None = None
         self.muted = False
+        self.volume = 1.0
         self.on_error = on_error
         self._retry_count = 0
         self._max_retries = 3
@@ -247,6 +263,10 @@ class AudioPlayer:
 
     def toggle_mute(self) -> bool:
         return self.set_muted(not self.muted)
+
+    def set_volume(self, percent: float) -> float:
+        self.volume = max(0.0, min(100.0, float(percent))) / 100.0
+        return self.volume
 
     def set_muted(self, muted: bool) -> bool:
         self.muted = bool(muted)
@@ -327,19 +347,17 @@ class AudioPlayer:
                     if not self.stop_event.is_set():
                         self.error = "El stream se cortó inesperadamente"
                     break
+                scaled = _apply_gain(data, self.volume)
                 try:
-                    output = b"\x00" * len(data) if self.muted else data
+                    output = b"\x00" * len(data) if self.muted else scaled
                     self.proc_sink.stdin.write(output)
                     self.proc_sink.stdin.flush()
                 except (BrokenPipeError, OSError, ValueError):
                     self.error = "El sink de audio se cerró"
                     break
-                if self.muted:
-                    self._update_levels(0.0, 0.0, [0.0] * NUM_BANDS)
-                else:
-                    left, right = compute_rms(data)
-                    bands = compute_bands(data, max_frames=FFT_FRAMES)
-                    self._update_levels(left, right, bands)
+                left, right = compute_rms(scaled)
+                bands = compute_bands(scaled, max_frames=FFT_FRAMES)
+                self._update_levels(left, right, bands)
         except Exception as exc:
             self.error = f"Error en el pipeline: {exc}"
         finally:

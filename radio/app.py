@@ -9,7 +9,16 @@ import time
 from rich.console import Console
 from rich.live import Live
 
-from .config import MAX_RECENT, RENDER_FPS, STATIONS, add_recent, load_recents
+from .config import (
+    MAX_RECENT,
+    RENDER_FPS,
+    STATIONS,
+    VOLUME_STEP,
+    add_recent,
+    load_recents,
+    load_volume,
+    save_volume,
+)
 from .deps import check_deps
 from .input import read_key_nonblocking
 from .metadata import IcyMetadataFetcher
@@ -26,6 +35,8 @@ class AppState:
         self.recents = load_recents()
         self.selected = 0
         self.player = AudioPlayer()
+        self.volume = load_volume()
+        self.player.set_volume(self.volume)
         self.running = True
         self.show_help = False
         if link_opencode is None:
@@ -171,6 +182,12 @@ class AppState:
             pass
         return self.link_opencode
 
+    def change_volume(self, delta: int) -> int:
+        self.volume = max(0, min(100, self.volume + delta))
+        self.player.set_volume(self.volume)
+        save_volume(self.volume)
+        return self.volume
+
     def toggle_help(self) -> None:
         self.show_help = not self.show_help
 
@@ -215,9 +232,14 @@ def handle_key(state: AppState, key: str) -> None:
         state.toggle_link_opencode()
     elif key in ("h", "H"):
         state.toggle_help()
-    elif key in ("RIGHT", "LEFT"):
-        if state.player.playing:
-            state.stop()
+    elif key == "RIGHT":
+        state.change_volume(VOLUME_STEP)
+    elif key == "LEFT":
+        state.change_volume(-VOLUME_STEP)
+    elif key in ("+", "="):
+        state.change_volume(VOLUME_STEP)
+    elif key == "-":
+        state.change_volume(-VOLUME_STEP)
     elif state.play_key(key):
         return
 
