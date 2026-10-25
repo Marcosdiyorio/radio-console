@@ -41,6 +41,8 @@ radio-agent
 | `Enter` | Play / stop selected station |
 | `Space`, `m` | Mute / unmute |
 | `t` | Rotate to the next available theme |
+| `l` | Toggle linking with OpenCode (default off) |
+| `h` | Show/hide help popup |
 | `a`–`e` | Play recent 1–5 (letter shown in the list) |
 | `1`–`9` | Play station N from the catalog |
 | `←` `→` | Stop playback |
@@ -72,7 +74,9 @@ Searched in this order:
 Default name/mode are read from `~/.config/opencode/cli.json` (`theme.name`,
 `theme.mode`). Override with `RADIO_THEME`, `RADIO_THEME_MODE`, `--theme` / `--mode`.
 Inside the TUI, `t` rotates through every theme found (including ones you add to the
-search folders), keeping the current `dark`/`light` mode.
+search folders), keeping the current `dark`/`light` mode. The selected theme is now
+persisted between runs. `l` toggles linking with OpenCode (off by default), so by
+default Radio keeps its own theme file.
 
 ### Stations and recents
 The catalog lives in `radio/stations.json` (JSON: `name`, `url`, `genre`, `city`).
@@ -143,6 +147,8 @@ radio-agent
 | `Enter` | Reproducir / detener la estación seleccionada |
 | `Espacio`, `m` | Silenciar / quitar el silencio (mute) |
 | `t` | Rotar al siguiente tema disponible |
+| `l` | Activar/desactivar enlace con OpenCode (por defecto desactivado) |
+| `h` | Mostrar/ocultar ventana de ayuda |
 | `a` – `e` | Reproducir el reciente 1–5 (letra que figura en la lista) |
 | `1` – `9` | Reproducir la estación N del catálogo visible |
 | `←` `→` | Detener la reproducción |
@@ -175,7 +181,9 @@ El nombre y el modo por defecto se leen de `~/.config/opencode/cli.json`
 (`theme.name` y `theme.mode`). Se pueden pisar con las variables de entorno
 `RADIO_THEME` y `RADIO_THEME_MODE`, o con `--theme` / `--mode`. Dentro de la TUI,
 `t` rota por todos los temas encontrados (incluidos los que agregues en las
-carpetas de búsqueda) manteniendo el modo `dark`/`light`.
+carpetas de búsqueda) manteniendo el modo `dark`/`light`. El tema seleccionado ahora
+se persiste entre ejecuciones. `l` activa/desactiva el enlace con OpenCode (desactivado
+por defecto), así por defecto Radio usa su propio archivo de tema.
 
 ### Estaciones y recientes
 El catálogo está en `radio/stations.json` (formato JSON: `name`, `url`, `genre`,
