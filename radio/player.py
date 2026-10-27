@@ -4,6 +4,8 @@ from __future__ import annotations
 import array
 import cmath
 import math
+import os
+import select
 import shutil
 import subprocess
 import sys
@@ -12,6 +14,12 @@ from functools import lru_cache
 
 from .config import CHANNELS, CHUNK_BYTES, FFT_FRAMES, NUM_BANDS, SAMPLE_RATE
 from .deps import find_sink
+
+# Si ffmpeg no entrega datos en este tiempo, el stream se considera trabado.
+STREAM_STALL_SECONDS = 5.0
+# Timeout de E/S de ffmpeg (microsegundos) para lecturas de red.
+FFMPEG_RW_TIMEOUT_US = 15_000_000
+STOP_JOIN_SECONDS = 10.0
 
 # Cortes de banda en Hz (7 bandas).
 _BAND_EDGES = [0, 120, 300, 700, 1500, 3000, 6000, 22050]
@@ -188,6 +196,23 @@ def compute_bands(data: bytes, max_frames: int | None = None) -> list[float]:
     return levels
 
 
+def _stop_process(proc, timeout: float = 2.0) -> None:
+    if proc is None:
+        return
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=1)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 class AudioPlayer:
     """Puentea ffmpeg con el sink de audio y expone niveles para la UI."""
 
@@ -209,6 +234,9 @@ class AudioPlayer:
         self.muted = False
         self.volume = 1.0
         self.on_error = on_error
+        self.gave_up = False
+        self.failed_name: str | None = None
+        self.received_chunks = 0
         self._retry_count = 0
         self._max_retries = 3
         self._band_decay = 0.92
@@ -223,13 +251,18 @@ class AudioPlayer:
         self.stop_event = threading.Event()
         self.error = None
         self._fatal = False
+        self.gave_up = False
+        self.failed_name = None
+        self.received_chunks = 0
         self.current_name = name
         self.current_url = url
         self.playing = True
         self._retry_count = 0
         with self.lock:
             self._reset_levels_locked()
-        self.thread = threading.Thread(target=self._run_with_retry, daemon=True, name="radio-player")
+        self.thread = threading.Thread(
+            target=self._run_with_retry, args=(self.stop_event,), daemon=True, name="radio-player"
+        )
         self.thread.start()
 
     def stop(self) -> None:
@@ -240,8 +273,16 @@ class AudioPlayer:
                     proc.terminate()
                 except Exception:
                     pass
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=4)
+        thread = self.thread
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=STOP_JOIN_SECONDS)
+            if thread.is_alive():
+                for proc in (self.proc_ffmpeg, self.proc_sink):
+                    if proc is not None:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
         self.playing = False
         self.current_name = None
         self.current_url = None
@@ -285,26 +326,29 @@ class AudioPlayer:
         self._peak_timer_l = 0
         self._peak_timer_r = 0
 
-    def _run_with_retry(self) -> None:
-        while not self.stop_event.is_set() and self._retry_count <= self._max_retries:
-            self._run_pipeline_once()
-            if self.stop_event.is_set() or self._fatal:
+    def _run_with_retry(self, stop_event: threading.Event) -> None:
+        name = self.current_name
+        while not stop_event.is_set():
+            self._run_pipeline_once(stop_event)
+            if stop_event.is_set() or self._fatal or not self.error:
                 break
-            if self.error and self._retry_count < self._max_retries:
-                self._retry_count += 1
-                wait = min(2 ** self._retry_count, 8)
-                self.stop_event.wait(wait)
-                if not self.stop_event.is_set():
-                    self.error = None
-                    self.playing = True
-                    continue
-            break
-        if not self.stop_event.is_set():
+            if self._retry_count >= self._max_retries:
+                break
+            self._retry_count += 1
+            stop_event.wait(min(2 ** self._retry_count, 8))
+            if stop_event.is_set():
+                break
+            self.error = None
+            self.playing = True
+        if not stop_event.is_set():
             self.playing = False
-            if self.error and self.on_error:
-                self.on_error(self.error)
+            if self.error and not self._fatal:
+                self.failed_name = name
+                self.gave_up = True
+                if self.on_error:
+                    self.on_error(self.error)
 
-    def _run_pipeline_once(self) -> None:
+    def _run_pipeline_once(self, stop_event: threading.Event) -> None:
         sink_cmd = find_sink()
         if sink_cmd is None:
             self.error = "No hay sink de audio (pw-cat/pacat/aplay/ffplay)"
@@ -321,6 +365,7 @@ class AudioPlayer:
             "ffmpeg", "-hide_banner", "-loglevel", "quiet", "-nostdin",
             "-reconnect", "1", "-reconnect_streamed", "1",
             "-reconnect_delay_max", "5",
+            "-rw_timeout", str(FFMPEG_RW_TIMEOUT_US),
             "-user_agent", "Mozilla/5.0 (RadioAgent/1.0)",
             "-i", self.current_url,
             "-vn", "-sn", "-dn",
@@ -328,30 +373,54 @@ class AudioPlayer:
             "pipe:1",
         ]
 
+        ffmpeg_proc = None
+        sink_proc = None
+        frame_bytes = 2 * CHANNELS
+        pending = bytearray()
+        flowing = False
         try:
-            self.proc_ffmpeg = subprocess.Popen(
+            ffmpeg_proc = subprocess.Popen(
                 ffmpeg_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
             )
-            self.proc_sink = subprocess.Popen(
+            self.proc_ffmpeg = ffmpeg_proc
+            sink_proc = subprocess.Popen(
                 sink_cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            while not self.stop_event.is_set():
-                data = self.proc_ffmpeg.stdout.read(CHUNK_BYTES)
-                if not data:
-                    if not self.stop_event.is_set():
+            self.proc_sink = sink_proc
+            fd = ffmpeg_proc.stdout.fileno()
+            while not stop_event.is_set():
+                ready, _, _ = select.select([fd], [], [], STREAM_STALL_SECONDS)
+                if not ready:
+                    if not stop_event.is_set():
+                        self.error = "El stream no envía datos (timeout)"
+                    break
+                chunk = os.read(fd, CHUNK_BYTES)
+                if not chunk:
+                    if not stop_event.is_set():
                         self.error = "El stream se cortó inesperadamente"
                     break
+                pending += chunk
+                usable = len(pending) - len(pending) % frame_bytes
+                if not usable:
+                    continue
+                data = bytes(pending[:usable])
+                del pending[:usable]
+                if not flowing:
+                    flowing = True
+                    self._retry_count = 0
+                    self.error = None
+                self.received_chunks += 1
                 scaled = _apply_gain(data, self.volume)
                 try:
                     output = b"\x00" * len(data) if self.muted else scaled
-                    self.proc_sink.stdin.write(output)
-                    self.proc_sink.stdin.flush()
+                    sink_proc.stdin.write(output)
+                    sink_proc.stdin.flush()
                 except (BrokenPipeError, OSError, ValueError):
                     self.error = "El sink de audio se cerró"
                     break
@@ -361,20 +430,12 @@ class AudioPlayer:
         except Exception as exc:
             self.error = f"Error en el pipeline: {exc}"
         finally:
-            for proc in (self.proc_ffmpeg, self.proc_sink):
-                if proc is None:
-                    continue
-                try:
-                    if proc.poll() is None:
-                        proc.terminate()
-                    proc.wait(timeout=2)
-                except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-            self.proc_ffmpeg = None
-            self.proc_sink = None
+            _stop_process(ffmpeg_proc)
+            _stop_process(sink_proc)
+            if self.proc_ffmpeg is ffmpeg_proc:
+                self.proc_ffmpeg = None
+            if self.proc_sink is sink_proc:
+                self.proc_sink = None
             with self.lock:
                 self._reset_levels_locked()
 

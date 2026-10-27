@@ -1,6 +1,9 @@
 import math
+import os
 import struct
+import threading
 import unittest
+from unittest import mock
 
 from radio.config import CHANNELS, NUM_BANDS, SAMPLE_RATE
 from radio.player import AudioPlayer, _apply_gain, compute_bands, compute_rms
@@ -66,6 +69,73 @@ class BandTests(unittest.TestCase):
         bands = compute_bands(tone(1000), max_frames=512)
         self.assertEqual(len(bands), NUM_BANDS)
         self.assertEqual(bands.index(max(bands)), 3)
+
+
+class FakeProc:
+    def __init__(self, stdout=None, stdin=None):
+        self.stdout = stdout
+        self.stdin = stdin
+        self.terminated = False
+        self.killed = False
+        self._rc = None
+
+    def poll(self):
+        return self._rc
+
+    def terminate(self):
+        self.terminated = True
+        self._rc = -15
+
+    def kill(self):
+        self.killed = True
+        self._rc = -9
+
+    def wait(self, timeout=None):
+        return self._rc if self._rc is not None else 0
+
+
+class FakeStdin:
+    def write(self, data):
+        return len(data)
+
+    def flush(self):
+        pass
+
+
+class StallTests(unittest.TestCase):
+    def test_stalled_stream_times_out_and_cleans_up(self):
+        read_fd, write_fd = os.pipe()
+        stdout = os.fdopen(read_fd, "rb", buffering=0)
+        ffmpeg = FakeProc(stdout=stdout)
+        sink = FakeProc(stdin=FakeStdin())
+        player = AudioPlayer()
+        player.current_url = "http://x/stream"
+        player.current_name = "X"
+        with mock.patch("radio.player.find_sink", return_value=["pw-cat"]), \
+                mock.patch("radio.player.shutil.which", return_value="/usr/bin/ffmpeg"), \
+                mock.patch("radio.player.subprocess.Popen", side_effect=[ffmpeg, sink]), \
+                mock.patch("radio.player.STREAM_STALL_SECONDS", 0.2):
+            player._run_pipeline_once(threading.Event())
+        os.close(write_fd)
+        stdout.close()
+        self.assertIn("timeout", player.error)
+        self.assertTrue(ffmpeg.terminated)
+        self.assertTrue(sink.terminated)
+        self.assertIsNone(player.proc_ffmpeg)
+        self.assertIsNone(player.proc_sink)
+
+    def test_gives_up_after_retries_are_exhausted(self):
+        player = AudioPlayer()
+        player.current_name = "X"
+        player._max_retries = 0
+
+        def fail(stop_event):
+            player.error = "boom"
+
+        player._run_pipeline_once = fail
+        player._run_with_retry(threading.Event())
+        self.assertTrue(player.gave_up)
+        self.assertEqual(player.failed_name, "X")
 
 
 class GainTests(unittest.TestCase):

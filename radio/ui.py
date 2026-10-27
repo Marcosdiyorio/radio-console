@@ -277,12 +277,15 @@ def render(state, pal: dict, width: int | None = None, height: int | None = None
     layout["now"].update(Panel(now, border_style=border))
 
     rows, cell, gap = _vu_geometry(width, height)
-    if player.error:
+    notice = getattr(state, "notice", None)
+    if player.error or notice:
         rows = max(3, rows - 1)
     vu = _render_vu(player, pal, rows, cell, gap)
+    vu_width = max(10, _vu_outer_width(width) - 4)
     if player.error:
-        vu_width = max(10, _vu_outer_width(width) - 4)
         vu.append(f"\n⚠  {_clip(player.error, vu_width - 3)}", style=f"bold {pal['red']}")
+    elif notice:
+        vu.append(f"\n●  {_clip(notice, vu_width - 3)}", style=f"bold {pal['yellow']}")
     vu_title = "[bold]VU · 7 bandas[/]"
     if getattr(player, "muted", False):
         vu_title += "  [yellow]MUTE[/]"

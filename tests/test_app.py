@@ -7,7 +7,7 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 from radio import config
-from radio.app import AppState, handle_key, main
+from radio.app import FALLBACK_LIMIT, AppState, handle_key, main
 from radio.config import STATIONS
 
 
@@ -177,6 +177,76 @@ class AppStateTests(unittest.TestCase):
         self.state.running = True
         handle_key(self.state, "ESC")
         self.assertFalse(self.state.running)
+
+
+class FallbackTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.patches = [
+            mock.patch.object(config, "RECENT_FILE", Path(self.tmp.name) / "recent.json"),
+            mock.patch.object(config, "VOLUME_FILE", Path(self.tmp.name) / "volume.json"),
+        ]
+        for patch in self.patches:
+            patch.start()
+        self.state = AppState(STATIONS, theme_name="matrix", theme_mode="dark")
+        self.state.player.play = MagicMock()
+        self.state.player.stop = MagicMock()
+        self.state.fetcher.start = MagicMock()
+        self.state.fetcher.stop = MagicMock()
+        self.state.player.playing = False
+
+    def tearDown(self):
+        for patch in self.patches:
+            patch.stop()
+        self.tmp.cleanup()
+
+    def give_up(self):
+        self.state.player.gave_up = True
+        self.state.player.failed_name = self.state.player.play.call_args.args[0]
+        self.state.tick()
+
+    def test_next_station_when_network_is_up(self):
+        self.state.start(0)
+        first = self.state.player.play.call_args.args[0]
+        with mock.patch("radio.app.has_network", return_value=True):
+            self.give_up()
+        second = self.state.player.play.call_args.args[0]
+        self.assertNotEqual(first, second)
+        self.assertEqual(second, self.state.all_stations[1][0])
+        self.assertIn("no responde", self.state.notice)
+
+    def test_no_fallback_without_network(self):
+        self.state.start(0)
+        with mock.patch("radio.app.has_network", return_value=False):
+            self.give_up()
+        self.assertEqual(self.state.player.play.call_count, 1)
+        self.assertEqual(self.state.notice, "Sin red: no cambio de emisora")
+
+    def test_fallback_limit_then_stops(self):
+        self.state.start(0)
+        with mock.patch("radio.app.has_network", return_value=True):
+            for _ in range(FALLBACK_LIMIT + 1):
+                self.give_up()
+        self.assertEqual(self.state.player.play.call_count, 1 + FALLBACK_LIMIT)
+        self.assertIn("Ninguna", self.state.notice)
+
+    def test_manual_start_resets_fallback(self):
+        self.state.start(0)
+        with mock.patch("radio.app.has_network", return_value=True):
+            for _ in range(FALLBACK_LIMIT + 1):
+                self.give_up()
+            self.state.start(0)
+            self.give_up()
+        self.assertIn("no responde", self.state.notice)
+        self.assertEqual(self.state.player.play.call_count, 1 + FALLBACK_LIMIT + 1 + 1)
+
+    def test_user_stop_cancels_pending_fallback(self):
+        self.state.start(0)
+        self.state.player.gave_up = True
+        self.state.player.failed_name = self.state.all_stations[0][0]
+        self.state.stop()
+        self.state.tick()
+        self.assertEqual(self.state.player.play.call_count, 1)
 
 
 class CliTests(unittest.TestCase):

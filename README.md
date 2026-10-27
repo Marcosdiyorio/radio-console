@@ -31,6 +31,10 @@ is on air, a 7-band meter and a theme that matches your terminal.
   the station plays.
 - **Playlists**: stations pointing to `.pls` or `.m3u` files are resolved to the real
   stream before connecting.
+- **Resilient playback**: a stream that stops sending audio is detected after 5 s and
+  retried with backoff. If it still does not answer, Radio moves to the next station in
+  the catalog, but only when there is network, and at most three times in a row. A
+  manual choice resets the chain.
 - **7-band VU meter** in dBFS (−60 … 0 dB) with frequency labels
   (`60 190 460 1k 2k 4k 11k`), peak hold, and a gray gradient while muted.
 - **Volume** from the keyboard (5 % steps), saved between runs and shown in the status
@@ -109,6 +113,11 @@ valid file in this order:
 If none is valid, the defaults in `radio/config.py` (`DEFAULT_STATIONS`) are used.
 **To add a station**, add an entry to the JSON and restart Radio: it shows up at the
 end of the catalog with the next free number.
+
+If a station stops responding, Radio retries it with backoff. After the retries it moves
+to the next station in the catalog, but only if the network is reachable (checked against
+`1.1.1.1:443`, cached for 30 s), and at most three times in a row. Without network it stays
+stopped and shows a notice in the VU panel.
 
 Metadata depends on the stream, not on the station entry: if the stream sends ICY
 titles or ID3 tags inside its segments, they appear while it plays. Some HLS streams
@@ -195,6 +204,10 @@ No network, audio or TTY required.
   mientras la emisora suena.
 - **Playlists:** las emisoras que apuntan a archivos `.pls` o `.m3u` se resuelven a la
   URL real del stream antes de conectar.
+- **Reproducción resiliente:** un stream que deja de enviar audio se detecta a los 5 s y
+  se reintenta con esperas crecientes. Si sigue sin responder, Radio pasa a la siguiente
+  emisora del catálogo, pero solo si hay red, y como máximo tres veces seguidas. Elegir
+  una emisora a mano reinicia la cadena.
 - **VU de 7 bandas** en dBFS (−60 … 0 dB) con etiquetas de frecuencia
   (`60 190 460 1k 2k 4k 11k`), retención de picos y degradé gris al mutear.
 - **Volumen** desde el teclado (pasos de 5 %), guardado entre ejecuciones y visible en la
@@ -273,6 +286,11 @@ válido en este orden:
 Si ninguno es válido, se usan las emisoras por defecto de `radio/config.py`
 (`DEFAULT_STATIONS`). **Para agregar una emisora**, sumá una entrada al JSON y reiniciá
 Radio: aparece al final del catálogo con el siguiente número libre.
+
+Si una emisora deja de responder, Radio la reintenta con esperas crecientes. Después de
+los reintentos pasa a la siguiente emisora del catálogo, pero solo si hay red (se verifica
+contra `1.1.1.1:443`, con caché de 30 s), y como máximo tres veces seguidas. Sin red queda
+detenida y muestra un aviso en el panel de la VU.
 
 La metadata depende del stream, no de la entrada de la emisora: si el stream manda
 títulos ICY o tags ID3 dentro de sus segmentos, se muestran mientras suena. Algunos

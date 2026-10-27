@@ -22,11 +22,16 @@ from .config import (
 from .deps import check_deps
 from .input import read_key_nonblocking
 from .metadata import IcyMetadataFetcher
+from .network import has_network
 from .playlist import resolve_stream_url
 from .player import AudioPlayer
 from .theme import DEFAULT_THEME_NAME, available_themes, load_theme, palette, save_theme as _save_theme
 from .ui import render
 from . import __version__
+
+
+FALLBACK_LIMIT = 3
+NOTICE_CLEAR_CHUNKS = 60
 
 
 class AppState:
@@ -39,6 +44,10 @@ class AppState:
         self.player.set_volume(self.volume)
         self.running = True
         self.show_help = False
+        self.notice: str | None = None
+        self._notice_clear_at: int | None = None
+        self._fallback_tried: set[str] = set()
+        self._fallback_count = 0
         if link_opencode is None:
             try:
                 from . import config as _cfg
@@ -111,11 +120,16 @@ class AppState:
         name = self.stations[index][0]
         return bool(self.player.playing and self.player.current_name == name)
 
-    def start(self, index: int) -> None:
+    def start(self, index: int, fallback: bool = False) -> None:
         if not (0 <= index < len(self.stations)):
             return
         name, url, *_ = self.stations[index]
         url = resolve_stream_url(url)
+        if not fallback:
+            self._fallback_tried.clear()
+            self._fallback_count = 0
+            self.notice = None
+            self._notice_clear_at = None
         self.selected = index
         self.player.play(name, url)
         add_recent(self.recents, name)
@@ -124,9 +138,45 @@ class AppState:
         self.fetcher.start(url, name)
 
     def stop(self) -> None:
+        self.player.gave_up = False
         self.player.stop()
         self.fetcher.stop()
         self.clear_metadata()
+
+    def tick(self) -> None:
+        """Revisa fallos del reproductor; se llama en cada vuelta del bucle principal."""
+        if self._notice_clear_at is not None and self.player.received_chunks >= self._notice_clear_at:
+            self.notice = None
+            self._notice_clear_at = None
+        if self.player.gave_up:
+            self.player.gave_up = False
+            self._try_fallback(self.player.failed_name)
+
+    def _try_fallback(self, failed_name: str | None) -> None:
+        if not failed_name:
+            return
+        self._fallback_tried.add(failed_name)
+        if self._fallback_count >= FALLBACK_LIMIT:
+            self.notice = "Ninguna emisora alternativa respondió; detenida"
+            return
+        if not has_network():
+            self.notice = "Sin red: no cambio de emisora"
+            return
+        names = [st[0] for st in self.all_stations]
+        if failed_name not in names:
+            return
+        position = names.index(failed_name)
+        for step in range(1, len(names)):
+            candidate = names[(position + step) % len(names)]
+            if candidate in self._fallback_tried:
+                continue
+            index = next(i for i, st in enumerate(self.stations) if st[0] == candidate)
+            self._fallback_count += 1
+            self.start(index, fallback=True)
+            self.notice = f"{failed_name} no responde; probando {candidate}"
+            self._notice_clear_at = NOTICE_CLEAR_CHUNKS
+            return
+        self.notice = "No hay otra emisora disponible; detenida"
 
     def toggle(self, index: int | None = None) -> None:
         idx = self.selected if index is None else index
@@ -336,6 +386,7 @@ def main(argv=None) -> int:
                 key = read_key_nonblocking()
                 if key:
                     handle_key(state, key)
+                state.tick()
                 live.update(render(state, state.pal))
                 time.sleep(1.0 / RENDER_FPS)
     except KeyboardInterrupt:
